@@ -7,18 +7,33 @@ use chrono::Utc;
 use uuid::Uuid;
 
 // FormData definition
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct FormData {
     name: String,
     email: String,
 }
 
-// subscribe is going to subscribe a user
-pub async fn subscribe(
-    form: web::Form<FormData>,
-    // Retrieving a connection from the application state!
-    pool: web::Data<PgPool>,
-) -> Result<HttpResponse , HttpResponse> {
+#[tracing::instrument(
+    name = "Adding new subscriber",
+    skip(form, pool),
+    fields(
+        subscriber_email = %form.email,
+        sbuscriber_name = %form.name
+    )
+)]
+pub async fn subscribe(form: web::Form<FormData>, pool: web::Data<PgPool>) -> HttpResponse {
+    match insert_subscriber(&pool, &form).await {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(_) => HttpResponse::InternalServerError().finish(),
+    }
+}
+
+
+#[tracing::instrument(
+    name = "Saving new subscriber details in the database",
+    skip(form, pool)
+)]
+pub async fn insert_subscriber(pool: &PgPool, form: &FormData) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
         INSERT INTO subscriptions (id, email, name, subscribed_at)
@@ -29,13 +44,11 @@ pub async fn subscribe(
         form.name,
         Utc::now()
     )
-    .execute(pool.get_ref())
+    .execute(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to execute query: {}", e);
-        HttpResponse::InternalServerError().finish()
+        tracing::error!("Failed to execute query: {:?}", e);
+        e
     })?;
-    Ok(HttpResponse::Ok().finish())
-    
+    Ok(())
 }
-
