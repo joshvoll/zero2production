@@ -15,7 +15,7 @@ async fn main() -> std::io::Result<()> {
     let configuration = get_configuration().expect("Failed to read the configuration");
     let connection_pool = PgPoolOptions::new()
         .connect_timeout(std::time::Duration::from_secs(2))
-        .connect(&configuration.database.connection_string())
+        .connect_with(configuration.database.with_db())
         .await
         .expect("Failed to connet");
     // Here we choose to bind explicitly to localhost, 127.0.0.1, for security

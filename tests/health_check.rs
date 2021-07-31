@@ -19,6 +19,7 @@ pub struct TestApp {
     pub db_pool: PgPool,
 }
 
+
 // Ensure that the `tracing` stack is only initialised once using `once_cell`
 static TRACING: Lazy<()> = Lazy::new(|| {
     let default_filter_level = "info".to_string();
@@ -58,7 +59,7 @@ async fn spawn_app() -> TestApp {
 // configuration_database is return a random configuration for a database
 pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
     // create database 
-    let mut connection = PgConnection::connect(&config.connection_string_without_db())
+    let mut connection = PgConnection::connect_with(&config.without_db())
         .await
         .expect("Failed to connect to postgres");
     connection
@@ -66,7 +67,7 @@ pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
         .await
         .expect("Failet to create database");
     // migrate the database
-    let connection_pool = PgPool::connect(&config.connection_string())
+    let connection_pool = PgPool::connect_with(config.with_db())
         .await
         .expect("Faile to connect to postgres when migrating");
     sqlx::migrate!("./migrations")
