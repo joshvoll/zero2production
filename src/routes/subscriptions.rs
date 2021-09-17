@@ -11,6 +11,7 @@ use crate::domain::{
     SubscriberEmail
 };
 use std::convert::TryInto;
+use crate::email_client::EmailClient;
 
 // FormData definition
 #[derive(Debug, serde::Deserialize)]
@@ -32,7 +33,7 @@ impl TryInto<NewSubscriber> for FormData {
 
 #[tracing::instrument(
     name = "Adding new subscriber",
-    skip(form, pool),
+    skip(form, pool, email_client),
     fields(
         subscriber_email = %form.email,
         sbuscriber_name = %form.name
@@ -40,7 +41,9 @@ impl TryInto<NewSubscriber> for FormData {
 )]
 pub async fn subscribe(
     form: web::Form<FormData>, 
-    pool: web::Data<PgPool>
+    pool: web::Data<PgPool>,
+    // get the email client from the app context
+    email_client: web::Data<EmailClient>
 ) -> HttpResponse {
     let new_subscriber = match form.0.try_into() {
         Ok(email) => email,
@@ -49,7 +52,25 @@ pub async fn subscribe(
     match insert_subscriber(&pool, &new_subscriber).await {
         Ok(_) => HttpResponse::Ok().finish(),
         Err(_) => HttpResponse::InternalServerError().finish(),
+    };
+    // Send a (useless) email to the new subscriber.
+    // We are ignoring email delivery errors for now.
+    if insert_subscriber(&pool, &new_subscriber).await.is_err() { 
+        return HttpResponse::Ok().finish();
     }
+    if email_client
+        .send_email(
+            new_subscriber.email,
+            "Welcome!!",
+            "Welcome to our newsletter",
+            "Welcome to our news",
+        )
+        .await
+        .is_err()
+    {
+        return HttpResponse::InternalServerError().finish();
+    }
+    HttpResponse::Ok().finish()
 }
 
 
@@ -64,8 +85,8 @@ pub async fn insert_subscriber(
 
     sqlx::query!(
         r#"
-        INSERT INTO subscriptions (id, email, name, subscribed_at)
-        VALUES ($1,$2,$3,$4)
+        INSERT INTO subscriptions (id, email, name, subscribed_at, status)
+        VALUES ($1,$2,$3,$4,'confirmed')
         "#,
         Uuid::new_v4(),
         new_subscriber.email.as_ref(),
